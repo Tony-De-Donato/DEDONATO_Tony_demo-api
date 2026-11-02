@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+
+FROM node:22.23.4-alpine3.24 AS deps
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+
+RUN npm ci --omit=dev
+
+FROM node:22.23.4-alpine3.24 AS runtime
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+RUN apk upgrade --no-cache \
+    && rm -rf /usr/local/lib/node_modules/npm \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx
+
+COPY --from=deps --chown=node:node /app/node_modules ./node_modules
+COPY --chown=node:node server.js package.json ./
+
+USER node
+
+EXPOSE 4000
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 4000) + '/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+
+CMD ["node", "server.js"]

@@ -15,6 +15,17 @@ const db = require('./db');
 
 const PORT = Number(process.env.PORT || 3000);
 const VERSION = process.env.VERSION || 'dev';
+const NOTIFIER_PORT = Number(process.env.NOTIFIER_PORT || 4000);
+
+// Best-effort : la requete n'attend pas notifier et n'echoue jamais a cause de lui.
+function notifyProductCreated(product) {
+  fetch(`http://notifier:${NOTIFIER_PORT}/notify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: product.name }),
+    signal: AbortSignal.timeout(2000),
+  }).catch((err) => console.error(JSON.stringify({ level: 'warn', msg: 'notify failed', err: err.message })));
+}
 
 const app = express();
 app.use(express.json());
@@ -63,7 +74,9 @@ app.post('/products', async (req, res) => {
     return res.status(400).json({ error: 'name (string) et price_cents (entier >= 0) requis' });
   }
   try {
-    res.status(201).json(await db.addProduct(name, priceCents));
+    const product = await db.addProduct(name, priceCents);
+    notifyProductCreated(product);
+    res.status(201).json(product);
   } catch (err) {
     res.status(503).json({ error: 'db_unavailable', detail: err.message });
   }
