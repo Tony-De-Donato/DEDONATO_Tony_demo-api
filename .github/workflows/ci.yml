@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build multi-stage image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          file: ./api/Dockerfile.multi
+          tags: demo-api:multi
+          load: true
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: demo-api:multi
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          scanners: vuln
