@@ -8,16 +8,25 @@ Le métier est volontairement trivial (`Node` + `Express` + `PostgreSQL`,
 un catalogue de produits) : toute la difficulté est sur **Docker**, jamais
 sur le code applicatif.
 
-## Point de départ
+## Démarrage avec Compose
 
-Ce dossier est ce que tu clones **avant ta première quête Docker**. Il n'y a
-volontairement **aucun fichier Docker** dedans, ni `Dockerfile`, ni
-`compose.yml` : ce sont précisément les fichiers que tu vas écrire, quête
-après quête, en faisant grossir ce dépôt.
+Depuis la racine du dépôt, copier la configuration puis modifier le mot de
+passe local :
 
-Sans conteneur, cette API ne démarre pas telle quelle : elle a besoin d'un
-PostgreSQL joignable pour répondre. C'est normal, et c'est tout le sujet de
-la première quête que de la faire tourner dans Docker.
+```sh
+cp .env.example .env
+```
+
+Lancer la stack :
+
+```sh
+docker compose up -d --build
+```
+
+L'API est disponible sur `http://localhost:${API_PORT:-8080}` et Adminer sur
+`http://localhost:${ADMINER_PORT:-8081}`. PostgreSQL n'est pas publié sur
+l'hôte. Dans Adminer, utiliser `db` comme serveur et les valeurs de
+`POSTGRES_USER`, `POSTGRES_DB` et `DB_PASSWORD` définies dans `.env`.
 
 ## Ce que contient le repo
 
@@ -27,6 +36,8 @@ la première quête que de la faire tourner dans Docker.
 | `api/db.js` | connexion PostgreSQL, entièrement pilotée par des variables d'environnement |
 | `api/package.json`, `api/package-lock.json` | dépendances (`express`, `pg`) |
 | `db/init.sql` | création de la table `products` + quelques données de démo |
+| `compose.yml` | services `api`, `db` et `adminer`, volume et secret |
+| `.env.example` | variables de configuration à copier dans `.env` |
 
 ## Les routes de l'API
 
@@ -39,18 +50,49 @@ la première quête que de la faire tourner dans Docker.
 | `GET` | `/products` | liste des produits |
 | `POST` | `/products` | crée un produit : `{ "name": "...", "price_cents": 1234 }` |
 
-## Ta progression, quête après quête
+## Variables et secrets
 
-| Quête | Ce que tu ajoutes au repo |
-|---|---|
-| Découverte de Docker | rien ici, tu manipules des images publiques et un `psql` en conteneur |
-| Le Dockerfile | `api/Dockerfile`, `api/.dockerignore` : l'API tourne enfin dans un conteneur |
-| Les volumes | un volume nommé pour la persistance de PostgreSQL |
-| Les réseaux | des réseaux dédiés, la base jamais exposée directement |
-| Compose | `compose.yml`, `.env.example` : tous les services démarrent ensemble |
-| Dockerfile et sécurité | ton `Dockerfile` durci : utilisateur non-root, `HEALTHCHECK` |
-| Builds multi-étapes et gestion des secrets | `api/Dockerfile.multi` : image allégée, secrets hors de l'image |
-| Analyse de vulnérabilité avec Trivy | un pipeline CI qui scanne ton image et bloque sur les failles critiques |
+Les variables sont définies dans `.env`, qui est ignoré par Git. Le mot de
+passe est monté dans les conteneurs par le secret Compose `db_password` :
+PostgreSQL le lit via `POSTGRES_PASSWORD_FILE` et l'API via
+`PGPASSWORD_FILE`. Ne jamais commiter `.env` ni remplacer ce mécanisme par
+un mot de passe en clair dans `compose.yml`.
+
+## Vérification
+
+Commande testée :
+
+```sh
+docker compose up -d --build
+docker compose ps
+curl -s localhost:8080/products
+curl -s -X POST -H 'content-type: application/json' \
+  -d '{"name":"Gourde","price_cents":900}' localhost:8080/products
+docker compose down
+docker compose up -d
+curl -s localhost:8080/products
+```
+
+Extrait attendu de `docker compose ps` :
+
+```text
+NAME        IMAGE             SERVICE     STATUS
+...         ...               db          Up ... (healthy)
+...         ...               api         Up ...
+```
+
+Le produit `Gourde` reste présent après `down` puis `up` grâce au volume
+nommé `pgdata`. `db/init.sql` n'est exécuté qu'au premier démarrage d'un
+volume vide.
+
+## Repartir de zéro
+
+Pour supprimer les données PostgreSQL et rejouer `db/init.sql` :
+
+```sh
+docker compose down -v
+docker compose up -d --build
+```
 
 ## Prérequis machine (macOS / Linux / Windows)
 
